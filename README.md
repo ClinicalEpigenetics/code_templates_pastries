@@ -91,16 +91,38 @@ $ git checkou <newbranch>
 
 Make and commit changes in the local repo. Test that they all work.
 
+```
+$ git add README.md
+$ git commit
+
+```
+
 #### Push changes to the forked remote repo
+
+Pushing changes to the forked remote repo will create a pull request in the main code base
 
 ```
 $ git push origin <newbranch>
 
 ```
+#### Make a pull request
+
+On GitHub navigate to your forked repo and click "New pull request"
+
+Choose the branches you made changes to <new branch> and the branch you want to merge into <main/master>
+
+Add descriptions for review. Once changes are reviewed the maintainers of the origial repo will incorporate
+changes.
 
 ## Etiquette
 
-Team members are invited to add scripts as a new branch to main branch and create a Pull Request. 
+Use clear and descriptive commit messages to track your work effectively.
+
+Consider using branches for different features or experiments to keep your project organized.
+
+Collaborate with your team members using pull requests to review and merge changes.
+
+Refer to GitHub's documentation and online resources for more in-depth guidance on Git and GitHub workflows.
 
 ## Contributors
 
