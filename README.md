@@ -105,8 +105,14 @@ Pushing changes to the forked remote repo will create a pull request in the main
 $ git push origin <newbranch>
 
 ```
+#### Make a pull request
 
-In GitHub, navigate to the original code_template master repo and create a pull request.
+On GitHub navigate to your forked repo and click "New pull request"
+
+Choose the branches you made changes to <new branch> and the branch you want to merge into <main/master>
+
+Add descriptions for review. Once changes are reviewed the maintainers of the origial repo will incorporate
+changes.
 
 ## Etiquette
 
