@@ -83,7 +83,7 @@ Create a new branch to house your changes
 
 ```
 $ git branch <newbranch>
-$ git checkou <newbranch>
+$ git checkout <newbranch>
 
 ```
 
@@ -109,7 +109,7 @@ $ git push origin <newbranch>
 
 On GitHub navigate to your forked repo and click "New pull request"
 
-Choose the branches you made changes to <new branch> and the branch you want to merge into <main/master>
+Choose the branches you made changes to the new branch and the branch you want to merge into <main/master>
 
 Add descriptions for review. Once changes are reviewed the maintainers of the origial repo will incorporate
 changes.
