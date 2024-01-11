@@ -83,7 +83,7 @@ Create a new branch to house your changes
 
 ```
 $ git branch <newbranch>
-$ git checkou <newbranch>
+$ git checkout <newbranch>
 
 ```
 
