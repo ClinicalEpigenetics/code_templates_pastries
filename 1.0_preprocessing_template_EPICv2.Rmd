@@ -1,0 +1,414 @@
+---
+title: "Raw data processing"
+author: "David Martino  \nTelethon Kids Institute  \nUniversity of Western Australia\n"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+**Project**   
+*Insert Project Name Here*  
+*PI: <First> <Last>*  
+*first.last@email.com.au*  
+
+**Protocol**  
+*Cell type: Cell or Tissue Here*  
+*Extraction method: Bead based, Chemagic DNA 400 kit H96 (Cat# CMG-1491)*  
+*Assay:Illumina Human Methylation EPIC v2.0*  
+
+**Data Generation**  
+*Extracted DNA send to AGRF Genotyping Service.*  
+*Contact: Melinda Ziino <melinda.ziino@agrf.org.au>* 
+
+# Getting Started
+
+Ensure your .idat files and SampleSheet.csv file are located in the 'datadir'. Datadir represents an input directory and the final processed data will be depostied in the 'outdir'. Note the raw data lives in the RAW_DATA repository and the processed in the ANALYSIS repository. Please maintain the experiment name across both RAW_DATA and ANALYSIS for consistency, i.e replace  CAGRFxxxxxxx_Project_Name with the experiment number provided by the service provider and your own project name eg CAGRF20456789_EPICHIPC_Ontogeny.
+
+## Directories
+```{r}
+datadir <- '/mnt/fws_hpc_cepi/RAW_DATA/CAGRFxxxxxxx_Project_Name' #where raw idat files are located
+outdir <- '/mnt/fws_hpc_cepi/ANALYSIS/CAGRFxxxxxxx_Project_Name'  #where processed data will go
+```
+
+## Libraries 
+```{r call library packages, message= FALSE}
+library(minfi)
+library(RColorBrewer)
+library(limma)
+library(cluster)
+library(ggplot2)
+library(reshape2)
+library(maxprobes)
+library(ggsci)
+library(dplyr)
+library(EpiDISH)
+library(IlluminaHumanMethylationEPICv2manifest)
+```
+
+# Importing raw data 
+```{r prepare sample metadata, message= FALSE}
+#read service provider sample annotations
+metadata = read.metharray.sheet(datadir, pattern = ".csv")
+```
+
+```{r read in raw data, warning=FALSE}
+#read in raw data
+RGset <- read.metharray.exp(base = NULL, targets = metadata)
+
+#update to EPICv2 annotations
+RGset@annotation <- c(array = "IlluminaHumanMethylationEPICv2", annotation = "20a1.hg38")
+```
+
+# Sample level QC
+## QC report
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="BISULFITE CONVERSION I")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="BISULFITE CONVERSION II")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="EXTENSION")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="HYBRIDIZATION")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="NON-POLYMORPHIC")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="SPECIFICITY I")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="SPECIFICITY II")
+```
+
+```{r fig.width=10, fig.height=8, warning= FALSE}
+controlStripPlot(RGset, controls="TARGET REMOVAL")
+```
+
+## Overall sample quality based on median methylated and unmethylated signals
+```{r fig.width=8, fig.height=8, fig.cap = 'Overall sample quality based on methylated and unmethylated signals', warning=FALSE}
+mSet <- preprocessRaw(RGset)
+plotQC(getQC(mSet),badSampleCutoff=10.5)
+```
+
+```{r}
+#extract qc measures
+qc.dat <- getQC(mSet)
+
+#find samples with poor qc
+foo <- apply(qc.dat,1,mean)
+keep <- which(foo > 10.5)
+```
+
+  
+In total `r nrow(metadata[-keep,])` samples failed overall QC  
+They are  
+`r print(metadata[-keep,])` 
+
+```{r}
+#remove any failed sample
+RGset = RGset[, keep]
+mSet = mSet[, keep]
+metadata = metadata[keep, ]
+```
+
+
+In total `r nrow(metadata[-keep,])` samples were removed from the data set for poor overall QC
+
+## Checking detection P calls
+Average probe p-detection for signal v noise
+```{r fig.width=10, fig.height=8, fig.cap = 'Detection p calls', warning=FALSE}
+detp = detectionP(RGset)
+
+barplot(apply(detp,2,mean), 
+        col= 'light blue', 
+        xaxt="none", 
+        ylim=c(0, 1.5e-2),
+        las=2, 
+        cex.names=0.8,
+        main = 'Average p detection')
+abline(h=0.01,col="red")
+title(xlab="Arrays",cex=2, line=1)
+```
+
+## Raw data distribution
+```{r fig.width=8, fig.height=8, fig.cap='Density distribution of raw data coloured by Slide'}
+# Define the number of colors you want
+nb.cols <- length(unique(metadata$Slide))
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+
+densityPlot(RGset, sampGroups = metadata$Slide, main= "Beta", xlab = "Beta", legend = TRUE, pal = mypal)
+```
+
+## Sex prediction
+```{r sex prediction, fig.width=10, fig.height=8, fig.cap = 'MDS analysis of sex', warning=FALSE}
+#estimate gender from microarray
+g.mSet <- mapToGenome(mSet)
+sex.pred=getSex(g.mSet)
+plot(sex.pred$xMed, sex.pred$yMed, pch= 19, col = ifelse(sex.pred$predictedSex=='M', 'blue','pink'))
+#text(sex.pred$xMed, sex.pred$yMed, labels = metadata$Sex, pos = 4)
+
+#Append predicted sex to metadata
+metadata$predictedSex <- as.character(sex.pred$predictedSex)
+```
+
+# Data normalization
+```{r Apply normalisation to raw data, message= FALSE, warning=FALSE}
+#Normalisation = off
+gRaw  = preprocessRaw(RGset)
+#Normalise stratified quantile (SQN)
+gNorm = preprocessQuantile(RGset)
+#Normalise Noob
+gNoob = preprocessNoob(RGset)
+#Normalise SWAN
+gSwan = preprocessSWAN(RGset)
+```
+
+```{r fig.width=8, fig.height=12, fig.cap='MDS comparison of Normalisation methods'}
+par(mfrow = c(2,2))
+mdsPlot(getBeta(gRaw),
+        sampGroups = metadata$Sample_Group,
+        pch=19,legendPos = 'bottomright',
+        main = 'Un-normalised')
+mdsPlot(getBeta(gNorm),
+        sampGroups = metadata$Sample_Group,
+        pch=19,legendPos = 'bottomright',
+        main = 'SQN')
+mdsPlot(getBeta(gNoob),
+        sampGroups = metadata$Sample_Group,
+        pch=19,legendPos = 'bottomright',
+        main = 'Noob')
+mdsPlot(getBeta(gSwan),
+        sampGroups = metadata$Sample_Group,
+        pch=19,legendPos = 'bottomright',
+        main = 'Swan')
+```
+
+### RLE plots
+Relative Log Expression computed for every spot in the array as the difference between the spot intensity and the median intensity for the same feature across all the arrays. Since majority of the spots are not expected to be differentially expressed, the plot shoud show boxplots centered around zero and all of them having the aproximately the same dispersion. An array showing greater dispersion than the other, or being not centered at zero could have quality problems.
+
+```{r fig.width=15, fig.height=12, fig.cap = 'Examining median centered signal pre -post normalization', warning=FALSE}
+M.raw = getM(gRaw)
+mSet.med= apply(M.raw, 1, median)
+RLE.raw = M.raw - mSet.med
+
+M.sqn = getM(gNorm)
+M.sqn.med = apply(M.sqn, 1, median)
+RLE.sqn = M.sqn - M.sqn.med
+
+M.noob = getM(gNoob)
+M.noob.med = apply(M.noob, 1, median)
+RLE.noob = M.noob - M.noob.med
+
+M.swan = getM(gSwan)
+M.swan.med = apply(M.swan, 1, median)
+RLE.swan = M.swan - M.swan.med
+
+par(mfrow=c(2,2))
+boxplot(RLE.raw, 
+        outline=FALSE, 
+        ylim=c(-1.5,1.5), 
+        ylab="Relative Log Methylation Value",
+        col= 'light blue', 
+        xaxt="none",
+        main='raw data')
+title("A",adj=0, cex.main=2)
+boxplot(RLE.sqn, 
+        outline=FALSE, 
+        ylim=c(-1.5,1.5), 
+        ylab="Relative Log Methylation Value",
+        col= 'light blue', 
+        xaxt="none",
+        main='sqn')
+title("B",adj=0, cex.main=2)
+boxplot(RLE.noob, 
+        outline=FALSE, 
+        ylim=c(-1.5,1.5), 
+        ylab="Relative Log Methylation Value",
+        col= 'light blue', 
+        xaxt="none",
+        main='Noob')
+title("C",adj=0, cex.main=2)
+boxplot(RLE.swan, 
+        outline=FALSE, 
+        ylim=c(-1.5,1.5), 
+        ylab="Relative Log Methylation Value",
+        col= 'light blue', 
+        xaxt="none",
+        main='swan')
+title("D",adj=0, cex.main=2)
+
+title(xlab="Arrays",cex=2, line=1)
+
+```
+
+### Density plots
+
+```{r fig.width=10, fig.height=10, fig.cap = 'Examining Beta density distribution of signal pre -post normalization'}
+par(mfrow=c(2,2))
+densityPlot(getBeta(gRaw), 
+            main= "Raw Beta", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(getBeta(gNorm), 
+            main= "SQN", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(getBeta(gNoob), 
+            main= "NOOB", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(getBeta(gSwan), 
+            main= "SWAN", 
+            xlab = "Beta",
+            legend=FALSE)
+```
+
+```{r fig.width=10, fig.height=10, fig.cap = 'Examining M density distribution of signal pre -post normalization'}
+par(mfrow=c(2,2))
+densityPlot(getM(gRaw), 
+            main= "Raw Beta", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(getM(gNorm), 
+            main= "SQN", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(getM(gNoob), 
+            main= "NOOB", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(getM(gSwan), 
+            main= "SWAN", 
+            xlab = "Beta",
+            legend=FALSE)
+```
+
+
+# Probe-level QC
+## Removing poor performing probes
+Probes with a detection p-value call of greater than 0.01 in one or more samples were excuded from subsequent analysis
+```{r remove poor performing probes}
+#choose bad probe cutoff (plim) for filering
+plim=1E-16
+
+# ensure probes are in the same order in the gNorm and detP objects
+detp <- detp[match(featureNames(gNorm),rownames(detp)),]
+
+#ticker probes before filtering
+pre <- length(featureNames(gNorm))
+
+#remove any probes that have failed in one or more samples
+keepProbes = rowSums(detp < plim) == ncol(detp)
+gNorm = gNorm[keepProbes, ]
+
+#ticker probes after filetering
+post <- length(featureNames(gNorm))
+```
+
+Probe call rate filter:`r print(plim)`  
+In total `r pre-post` probes were removed  
+After filtering data set is  
+`r ncol(gNorm)` total samples
+`r nrow(gNorm)` total probes  
+
+## Remove unwanted SNP and non CG methylation probes
+These probes are confounded by genotype or target non-CG methylation
+```{r remove SNP probes and non CG methylation probes, message = FALSE}
+#ticker number of probes before filtering
+pre   <- length(featureNames(gNorm))
+
+gNorm <- dropLociWithSnps(gNorm, snps=c("SBE","CpG"), maf=0)
+gNorm <- dropMethylationLoci(gNorm, dropCH = TRUE)
+
+#ticker number of probes after filtering
+post  <- length(featureNames(gNorm))
+```
+
+In total `r pre-post` probes were removed  
+After filtering data set is:  
+`r ncol(gNorm)` total samples
+`r nrow(gNorm)` total probes
+
+# Extract Final Beta and Mvals
+```{r extract Beta and Mvals to file}
+Beta=getBeta(gNorm)
+M=getM(gNorm)
+map2genome=getAnnotation(gNorm)
+```
+
+# Estimation of cell composition
+
+Estimation of cell composition relies on knowledge of the tissue studied, and the use of reference data sets for that tissue. The example below relates to blood, the most common sample type we work with. If your data are derived from other tissues you will an appropriate reference data set. Consult the epiDISH documentation for details. 
+
+```{r fig.width=12, fig.height=10, fig.cap = 'Reference-based estimation of cell counts'}
+
+#create an EPIC v1 for back compatability for cell count estimation
+epicv1 <- Beta[grep('cg', map2genome$EPICv1_Loci),]
+epicv1.map <- map2genome[grep('cg', map2genome$EPICv1_Loci),] #subset the annotation map
+rownames(epicv1) <- epicv1.map$EPICv1_Loci #rename the EPICv2 rownames to be concordant with EPIC v1 array.
+
+blood.cnt <- epidish(epicv1, ref.m = centDHSbloodDMC.m, method = "RPC")$estF %>%
+  as.matrix() %>%
+  round(digits = 2) %>%
+  as_tibble()
+
+boxplot(blood.cnt, xlab = 'Cell Type', ylab = 'Estimated Proportion in Blood', main = 'Estimation of cell counts in blood')
+```
+
+## Append cell counts to metadata
+```{r}
+metadata <- cbind(metadata, blood.cnt)
+```
+
+
+Final processed data set is:  
+`r ncol(Beta)` total samples
+`r nrow(Beta)` total probes
+
+# Distribution of processed data
+```{r fig.width=10, fig.height=5, fig.cap = 'Processed Beta and M values'}
+par(mfrow=c(1,2))
+densityPlot(Beta, 
+            main= "Beta Values", 
+            xlab = "Beta",
+            legend=FALSE)
+densityPlot(M, 
+            main= "M-values", 
+            xlab = "M-values",
+            legend=FALSE)
+```
+
+# save objects
+
+Final objects to be saved in the ANLAYSIS repository.
+
+```{r}
+metadata <- metadata %>%
+  dplyr::select(-Basename)
+
+save(RGset, M, Beta, map2genome, metadata, file= file.path(outdir,'savedenvirons.RData'))
+```
+
+
+# R session info
+```{r}
+sessionInfo()
+```
+
