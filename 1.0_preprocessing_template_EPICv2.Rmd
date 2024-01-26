@@ -15,8 +15,8 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 **Project**   
-*Insert Project Name Here*  
-*PI: <First> <Last>*  
+*My project*  
+*PI: <David> <Martino>*  
 *first.last@email.com.au*  
 
 **Protocol**  
